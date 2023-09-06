@@ -1,0 +1,566 @@
+Parameters:
+    apiGatewayName:
+      Type: String
+      Default: apiGateway
+    apiGatewayStageName:
+      Type: String
+      AllowedPattern: '[a-z0-9]+'
+      Default: dev
+    apiGatewayHTTPMethod:
+      Type: String
+      Default: POST
+    lambdaFunctionName1:
+      Type: String
+      AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0.9]+'
+      Default: NewRegisterStockFunction
+    lambdaFunctionName2:
+      Type: String
+      AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+      Default: NewAddProductToStockFunction
+    lambdaFunctionName3:
+      Type: String
+      AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+      Default: NewDeleteProductFunction
+    lambdaFunctionName4:
+      Type: String
+      AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+      Default: NewGetAllProductsFromQueueFunction
+    lambdaFunctionName5:
+      Type: String
+      AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+      Default: NewGetProductsForSpecificStockFunction
+      
+Resources:
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-05548f9cecf47b442
+      InstanceType: t2.micro
+      KeyName: NewCloudPEM
+      SecurityGroupIds:
+        - Ref: NewSecurityGroup
+
+  NewSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: New security group for EC2 instance
+      VpcId: vpc-0f54acc4b40bf5b99
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8083
+          ToPort: 8083
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8083
+          ToPort: 8083
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+
+  NewDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Stock
+      KeySchema:
+        - AttributeName: stockID
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: stockID
+          AttributeType: N
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  MyS3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: "stock-cloud-bucket"
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  MyBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref MyS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "PublicReadGetObject"
+            Effect: "Allow"
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Join ["", ["arn:aws:s3:::", !Ref MyS3Bucket, "/*"]]
+
+  NewSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: "NewStockAlert"
+      TopicName: "NewStockAlert"
+
+  NewQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: NewProductQueue
+
+
+  apiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: New API for interacting with the stock application
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: apigateway
+
+  Resource1:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: new-register
+
+  Resource2:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: new-add
+
+  Resource3:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: new-delete
+
+  Resource4:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: new-getall  
+
+  Resource5:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: new-get
+
+
+
+  apiGatewayRootMethod1:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn1}/invocations
+          - lambdaArn1: !GetAtt lambdaFunction1.Arn
+      ResourceId: !Ref Resource1
+      RestApiId: !Ref apiGateway
+    DependsOn: lambdaFunction1
+
+  apiGatewayRootMethod2:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn2}/invocations
+          - lambdaArn2: !GetAtt lambdaFunction2.Arn
+      ResourceId: !Ref Resource2
+      RestApiId: !Ref apiGateway
+    DependsOn: lambdaFunction2
+
+  apiGatewayRootMethod3:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn3}/invocations
+          - lambdaArn3: !GetAtt lambdaFunction3.Arn
+      ResourceId: !Ref Resource3
+      RestApiId: !Ref apiGateway
+    DependsOn: lambdaFunction3
+
+  apiGatewayRootMethod4:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn4}/invocations
+          - lambdaArn4: !GetAtt lambdaFunction4.Arn
+      ResourceId: !Ref Resource4
+      RestApiId: !Ref apiGateway
+    DependsOn: lambdaFunction4
+
+  apiGatewayRootMethod5:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn5}/invocations
+          - lambdaArn5: !GetAtt lambdaFunction5.Arn
+      ResourceId: !Ref Resource5
+      RestApiId: !Ref apiGateway
+    DependsOn: lambdaFunction5
+
+  apiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - apiGatewayRootMethod1
+      - apiGatewayRootMethod2
+      - apiGatewayRootMethod3
+      - apiGatewayRootMethod4
+      - apiGatewayRootMethod5
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: !Ref apiGatewayStageName
+
+  lambdaFunction1:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import os
+          def lambda_handler(event, context):
+              conn = http.client.HTTPConnection(os.environ['ipAddress'], 3000)
+              print(os.environ['ipAddress'])
+
+              # Check if the event object has the expected properties
+              if 'stockID' in event and 'stockName' in event and 'stockEmail' in event and 'products' in event:
+                  body = json.dumps({
+                      'body': json.dumps({
+                          'stockID': event['stockID'],
+                          'stockName': event['stockName'],
+                          'stockEmail': event['stockEmail'],
+                          'products': event['products']
+                      })
+                  })
+              else:
+                  # Handle the case where the event object doesn't have the expected properties
+                  body = json.dumps({
+                      'body': json.dumps({
+                          'stockID': 1,
+                          'stockName': 'groceries',
+                          'stockEmail': 'nv499677@dal.ca',
+                          'products': []})
+                  })
+
+              headers = {'Content-Type': 'application/json'}
+              conn.request('POST', '/api/stocks/addstockwithproducts', body=body, headers=headers)
+
+              response = conn.getresponse()
+              data = response.read().decode()
+
+              # Create response for API Gateway
+              response = {
+                  "statusCode": response.status,
+                  "body": data,  # This will be the JSON string that your Express.js app sends back
+                  "headers": {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*',
+                      'Access-Control-Allow-Credentials': True,},
+                  "isBase64Encoded": False}
+              return response
+      Description:  Lambda function 1
+      FunctionName: !Ref lambdaFunctionName1
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: arn:aws:iam::867581980728:role/LabRole
+      Runtime: python3.8
+      Environment:
+        Variables:
+          ipAddress: !GetAtt EC2Instance.PublicIp
+          QueueUrl : !GetAtt NewQueue.Arn
+          TABLE_NAME: !Ref NewDynamoDBTable
+
+  lambdaFunction2:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import os
+
+          def lambda_handler(event, context):
+              conn = http.client.HTTPConnection(os.environ['ipAddress'], 3000)
+              headers = {'Content-Type': 'application/json'}
+              conn.request('POST', f'/api/stocks/addproduct/{event["products"][0]["stockID"]}', body=json.dumps(event), headers=headers)
+
+              response = conn.getresponse()
+              data = response.read()
+              return json.loads(data)
+
+      Description:  Lambda function 2
+      FunctionName: !Ref lambdaFunctionName2
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: arn:aws:iam::867581980728:role/LabRole
+      Runtime: python3.8
+      Environment:
+        Variables:
+          ipAddress: !GetAtt EC2Instance.PublicIp
+
+  lambdaFunction3:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import os
+
+          def lambda_handler(event, context):
+              conn = http.client.HTTPConnection(os.environ['ipAddress'], 3000)
+              conn.request('GET', f'/api/stocks/deleteproduct/{event["id"]}/{event["id1"]}')
+
+              response = conn.getresponse()
+              data = response.read()
+              return json.loads(data)
+
+      Description:  Lambda function 3
+      FunctionName: !Ref lambdaFunctionName3
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: arn:aws:iam::867581980728:role/LabRole
+      Runtime: python3.8
+      Environment:
+        Variables:
+          ipAddress: !GetAtt EC2Instance.PublicIp
+
+  lambdaFunction4:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import os
+
+          def lambda_handler(event, context):
+              conn = http.client.HTTPConnection(os.environ['ipAddress'], 3000)
+              conn.request('GET', '/api/stocks/getallproducts')
+
+              response = conn.getresponse()
+              data = response.read()
+              return json.loads(data)
+
+      Description:  Lambda function 4
+      FunctionName: !Ref lambdaFunctionName4
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: arn:aws:iam::867581980728:role/LabRole
+      Runtime: python3.8
+      Environment:
+        Variables:
+          ipAddress: !GetAtt EC2Instance.PublicIp
+
+  lambdaFunction5:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import http.client
+          import json
+          import os
+
+          def lambda_handler(event, context):
+              conn = http.client.HTTPConnection(os.environ['ipAddress'], 3000)
+              conn.request('GET', f'/api/stocks/getproductsforspecificstock/{event["id"]}')
+
+              response = conn.getresponse()
+              data = response.read()
+              return json.loads(data)
+
+      Description:  Lambda function 5
+      FunctionName: !Ref lambdaFunctionName5
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: arn:aws:iam::867581980728:role/LabRole
+      Runtime: python3.8
+      Environment:
+        Variables:
+          ipAddress: !GetAtt EC2Instance.PublicIp
+
+  lambdaApiGatewayInvoke1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdaFunction1
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/new-register"
+
+  lambdaApiGatewayInvoke2:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdaFunction2
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/new-add"
+
+  lambdaApiGatewayInvoke3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdaFunction3
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/new-delete"
+
+  lambdaApiGatewayInvoke4:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdaFunction4
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/new-getall"
+
+  lambdaApiGatewayInvoke5:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdaFunction5
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/new-get"
+
+  lambdaLogGroup1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName1}
+      RetentionInDays: 90
+
+  lambdaLogGroup2:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName2}
+      RetentionInDays: 90
+
+  lambdaLogGroup3:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName3}
+      RetentionInDays: 90
+
+  lambdaLogGroup4:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName4}
+      RetentionInDays: 90
+
+  lambdaLogGroup5:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName5}
+      RetentionInDays: 90
+
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: sqs:SendMessage
+            Resource: !GetAtt NewQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref NewSNSTopic
+      Queues:
+        - !Ref NewQueue
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt NewQueue.Arn
+      Protocol: sqs
+      TopicArn: !Ref NewSNSTopic
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: sns:Publish
+            Resource: !Ref NewSNSTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref NewSNSTopic
+      Topics:
+        - !Ref NewSNSTopic
+
+Outputs:
+  apiGatewayInvokeURL:
+    Value: !Sub https://${apiGateway}.execute-api.${AWS::Region}.amazonaws.com/${apiGatewayStageName}
+
+  lambdaArn1:
+    Value: !GetAtt lambdaFunction1.Arn
+
+  lambdaArn2:
+    Value: !GetAtt lambdaFunction2.Arn
+
+  lambdaArn3:
+    Value: !GetAtt lambdaFunction3.Arn
+
+  lambdaArn4:
+    Value: !GetAtt lambdaFunction4.Arn
+
+  lambdaArn5:
+    Value: !GetAtt lambdaFunction5.Arn
